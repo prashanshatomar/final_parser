@@ -1,0 +1,183 @@
+var createError = require('http-errors');
+var express = require('express');
+var path = require('path');
+var cookieParser = require('cookie-parser');
+var logger = require('morgan');
+
+var indexRouter = require('./routes/index');
+var usersRouter = require('./routes/users');
+
+var app = express();
+//_____________________________________________________________________________________________________
+var mqtt=require('mqtt');
+var fs=require('fs')
+//_____________________________________________________________________________________________________
+// view engine setup
+app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'jade');
+
+app.use(logger('dev'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.use('/', indexRouter);
+app.use('/users', usersRouter);
+
+// catch 404 and forward to error handler
+app.use(function(req, res, next) {
+  next(createError(404));
+});
+
+// error handler
+app.use(function(err, req, res, next) {
+  // set locals, only providing error in development
+  res.locals.message = err.message;
+  res.locals.error = req.app.get('env') === 'development' ? err : {};
+
+  // render the error page
+  res.status(err.status || 500);
+  res.render('error');
+});
+//___________________________________________________________________________________________________
+
+//_____________________@PRASHANSHA TOMAR_____________________________________________________________
+
+//config data
+var config_data={
+  "MQTT_HOST":"192:168:123:31",
+  "MQTT_PORT":8883,
+  "TOPIC_PUB_SUB":"TESTING_BROKER",
+  "PACKET_DELAY_TIME":1,
+  "RUN_TIME":2000,
+  "QOS":2,
+  "PASSPHRASE":'MQTT@2017',
+  "CERT_FILE_PATH":__dirname+'/ca.cert.pem',
+  "PUB_SUB_TOPIC":"broker_testing",
+  "MSG_DELAY":1,
+  "MSG_COUNTER_START":0,
+  "CLEAR_INTERVAL":3000,
+  "TOTAL_PACKET_TO_SEND":2000
+  
+}
+var send_data=[];
+var received_msg=[];
+
+//___________________________SUBSCRIBER CODE______________________________________________________________________
+
+global.subscriber_client= mqtt.connect("mqtts://192.168.123.31",
+{	  
+  port:config_data.MQTT_PORT,
+  host:config_data.MQTT_HOST,
+  passphrase:config_data.PASSPHRASE,
+  rejectUnauthorized:true,
+  ca:fs.readFileSync(config_data.CERT_FILE_PATH),
+  clean : true,
+  qos:config_data.QOS
+})
+
+global.subscriber_client.on('connect',function(){
+  console.log("Subscriber client connected...");
+  global.subscriber_client.subscribe(config_data.PUB_SUB_TOPIC,{qos:config_data.QOS});
+})
+
+
+global.subscriber_client.on('message', function (topic, message) {
+ // console.log(JSON.stringify(JSON.parse(message))+'---------------------------message')
+  received_msg.push(JSON.stringify(JSON.parse(message))) 
+//  console.log(received_msg);
+})
+setTimeout(function(){
+ 
+  var recd_msgs = "{messages:[" + received_msg + "]}";
+  
+
+  fs.writeFile("/home/mqadmin/Documents/mqtt_test/final_parser/subscriber_log.txt",recd_msgs, function(err,data) {
+    if(err) {
+        return console.log(err);
+    }else{console.log(data)}
+});  
+},config_data.CLEAR_INTERVAL)
+
+global.subscriber_client.on('error', function (error) {
+	console.error("Unable to connect Mqtt " + JSON.stringify(error))
+});
+//________________________PUBLISHER CODE__________________________________________________________________
+
+setTimeout(function(){
+
+  global.publisher_client = mqtt.connect("mqtts://192.168.123.31",
+  {	  
+    port:config_data.MQTT_PORT,
+    host:config_data.MQTT_HOST,
+    passphrase:config_data.PASSPHRASE,
+    rejectUnauthorized:true,
+    ca:fs.readFileSync(config_data.CERT_FILE_PATH),
+    clean : true,
+    qos:config_data.QOS
+  })
+
+  
+  global.publisher_client.on('connect',function(){
+   
+    console.log("Publisher client connected...");
+
+    while(config_data.MSG_COUNTER_START<config_data.TOTAL_PACKET_TO_SEND){
+
+      config_data.MSG_COUNTER_START=config_data.MSG_COUNTER_START+1;
+     
+      var t=setInterval(function(){ 
+
+        console.log("Msg counter :: ==> "+config_data.MSG_COUNTER_START)
+
+       config_data.MSG_COUNTER_START=config_data.MSG_COUNTER_START+1;
+
+        global.publisher_client.publish(config_data.PUB_SUB_TOPIC,JSON.stringify({'Message_counter':  config_data.MSG_COUNTER_START,'Time':(new Date).getTime()}),{qos:2})
+      
+        send_data.push(JSON.stringify({'Message_counter':  config_data.MSG_COUNTER_START,'Time':(new Date).getTime()}));    
+
+      },config_data.MSG_DELAY);
+    }
+    if(config_data.MSG_COUNTER_START==config_data.TOTAL_PACKET_TO_SEND){
+      clearInterval(t);
+      fs.writeFile("/home/mqadmin/Documents/mqtt_test/final_parser/publisher_log.txt",JSON.stringify({'messages':[send_data]}), function(err,data) {
+        if(err) {
+          return console.log(err);
+         }else{
+           console.log(data);}
+        });  
+    }
+   
+  
+    // setTimeout(function(){
+
+    //   clearInterval(t);
+
+    //   setTimeout(function(){
+
+    //     fs.writeFile("/home/mqadmin/Documents/mqtt_test/final_parser/publisher_log.txt",JSON.stringify({'messages':[send_data]}), function(err,data) {
+    //       if(err) {
+    //         return console.log(err);
+    //        }else{
+    //          console.log(data);}
+    //       });  
+    //   },config_data.CLEAR_INTERVAL)
+      
+    // },config_data.CLEAR_INTERVAL)
+  })
+},5000)
+
+
+
+
+
+
+//___________________________________________________________________________________________________
+
+
+
+//___________________________________________________________________________________________________
+
+
+module.exports = app;
